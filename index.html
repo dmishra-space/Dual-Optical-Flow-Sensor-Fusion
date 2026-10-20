@@ -1,0 +1,181 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPS-Free Drone Position Hold | Divyanshi Mishra</title>
+<meta name="description" content="MSc thesis project by Divyanshi Mishra: a ROS2/Python controller that holds a PX4 drone in position with GPS switched off, using two fused optical-flow sensors. Flight video, design and results.">
+<meta property="og:title" content="GPS-Free Drone Position Hold | Divyanshi Mishra">
+<meta property="og:description" content="Flight-tested drone controller that holds position with GPS off: about 43 s of autonomous hover, attitude within ±2°.">
+<meta property="og:image" content="hover_test.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column, video first, a strip of flight-log style numbers, then the story (problem, build, decision, testing). */
+:root {
+  --bg: #f5f6f4; --surface: #ffffff; --ink: #18201c; --muted: #58635d; --line: #dfe3df;
+  --accent: #1f6f5c; --accent-soft: #e2f0eb; --signal: #c2541b;
+  --sans: "Instrument Sans", "Segoe UI", Arial, sans-serif; --mono: "IBM Plex Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111613; --surface: #18201b; --ink: #e5ebe7; --muted: #9aa69f; --line: #2a342e;
+          --accent: #6cc7ac; --accent-soft: #1b2e27; --signal: #f0915a; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 17px/1.65 var(--sans); }
+.wrap { max-width: 880px; margin: 0 auto; padding: 40px max(18px, env(safe-area-inset-left)) 72px max(18px, env(safe-area-inset-right)); display: flex; flex-direction: column; gap: 44px; }
+.wrap > * { min-width: 0; max-width: 100%; }
+header .eyebrow { font: 500 .78rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+h1 { font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.1; margin: 0 0 14px; letter-spacing: -.02em; text-wrap: balance; }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 62ch; margin: 0; }
+h2 { font-size: 1.4rem; margin: 0 0 12px; letter-spacing: -.01em; text-wrap: balance; }
+p { margin: 0 0 12px; max-width: 66ch; }
+.video { border-radius: 10px; overflow: hidden; background: #000; border: 1px solid var(--line); }
+.video video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; background: #000; }
+figcaption, .cap { font: .82rem var(--mono); color: var(--muted); margin-top: 8px; }
+.readout { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.readout div { background: var(--surface); padding: 16px 18px; min-width: 0; }
+.readout b { display: block; font: 600 1.6rem/1.1 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.readout span { display: block; font-size: .85rem; color: var(--muted); margin-top: 6px; }
+.two { display: grid; grid-template-columns: 1.15fr .85fr; gap: 28px; align-items: start; }
+.two > * { min-width: 0; }
+ul.points { margin: 0; padding-left: 20px; }
+ul.points li { margin: 6px 0; max-width: 62ch; }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; overflow-x: auto; }
+.diagram svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.photo { margin: 0; }
+.photo img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); display: block; }
+.build img { background: var(--surface); padding: 12px; object-fit: contain; max-height: 420px; }
+.decision { border-left: 3px solid var(--signal); padding: 4px 0 4px 18px; }
+.links { display: flex; flex-wrap: wrap; gap: 10px; }
+.links a { font: 500 .95rem var(--sans); color: var(--ink); text-decoration: none; border: 1px solid var(--line); background: var(--surface); padding: 9px 14px; border-radius: 8px; }
+.links a:hover, .links a:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.links a.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.contact { font: .95rem var(--mono); color: var(--muted); user-select: all; overflow-wrap: anywhere; }
+footer { font-size: .85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; }
+@media (max-width: 720px) {
+  .readout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .two { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">MSc thesis project · ZHAW Zurich University of Applied Sciences · 2025–2026</p>
+  <h1>A drone that holds its position with GPS switched off</h1>
+  <p class="lede">I designed and flight-tested a controller that keeps a PX4 quadcopter hovering in place using only two downward-looking optical-flow sensors. No GPS, no motion-capture system.</p>
+</header>
+
+<figure style="margin:0">
+  <div class="video">
+    <video controls muted playsinline preload="metadata" poster="hover_test.jpg">
+      <source src="final_thesis_flight.mp4" type="video/mp4">
+      Your browser can't play this video. <a href="final_thesis_flight.mp4">Download it here</a>.
+    </video>
+  </div>
+  <figcaption>Final flight test video (21 s), Master's thesis.</figcaption>
+</figure>
+
+<section class="readout" aria-label="Flight test results">
+  <div><b>≈43 s</b><span>autonomous position hold</span></div>
+  <div><b>GPS off</b><span>optical flow only</span></div>
+  <div><b>±2°</b><span>attitude error during hold</span></div>
+  <div><b>3 months</b><span>thesis project at ZHAW, Switzerland</span></div>
+</section>
+
+<section>
+  <h2>The problem</h2>
+  <p>A small drone normally knows where it is from GPS. Indoors, between buildings or near walls, that signal is weak or missing, and the drone starts to drift. My thesis asked a simple question: can a low-cost drone hold a steady hover using only cameras that watch the ground move underneath it?</p>
+</section>
+
+<section>
+  <h2>What I built</h2>
+  <div class="two">
+    <ul class="points">
+      <li><b>The controller.</b> A ROS2 node in Python, running on a Raspberry Pi 4, with cascaded position and velocity loops. It commands PX4's own attitude and rate loops on a Pixhawk 4 flight controller.</li>
+      <li><b>Two sensors instead of one.</b> I fused two optical-flow sensors, weighting each by its signal quality, and fed the result into PX4's state estimator through a custom message. If one sensor degrades, the other keeps the estimate alive.</li>
+      <li><b>A way to fail safely.</b> A three-layer safety system checks that the estimate is valid and that the link to the companion computer is alive. If either fails, it falls back to a safe hover.</li>
+      <li><b>My own flight-log tool.</b> I built a small AI-assisted app to review every flight from the logs, so each test told me exactly what changed.</li>
+    </ul>
+    <figure class="photo build">
+      <img src="drone_build.png" alt="Top view of the quadcopter: Pixhawk 4 flight controller, GPS module and Raspberry Pi 4 companion computer mounted on the frame" width="433" height="577" loading="lazy">
+      <figcaption>The test drone: Pixhawk 4 + Raspberry Pi 4 companion computer.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section aria-label="System diagram">
+  <div class="diagram">
+    <svg viewBox="0 0 760 250" role="img" aria-label="Data flow: two optical-flow sensors feed a fusion node on the Raspberry Pi, which sends a fused flow message to the PX4 estimator on the Pixhawk; the position controller on the Pi reads the estimate and sends attitude setpoints to PX4's attitude and rate loops, which drive the motors. A safety monitor can switch to safe hover.">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+      </defs>
+      <style>
+        .bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+        .pi { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+        .t { font: 600 13px var(--sans); fill: var(--ink); }
+        .s { font: 11.5px var(--mono); fill: var(--muted); }
+        .ln { stroke: var(--muted); stroke-width: 1.5; fill: none; marker-end: url(#ah); }
+        .grp { font: 500 11px var(--mono); fill: var(--accent); letter-spacing: .06em; }
+        .safe { fill: none; stroke: var(--signal); stroke-width: 1.5; stroke-dasharray: 5 4; }
+        .st { font: 600 12px var(--sans); fill: var(--signal); }
+      </style>
+      <rect class="bx" x="10" y="40" width="130" height="64" rx="8"/><text class="t" x="24" y="66">2× optical flow</text><text class="s" x="24" y="86">downward sensors</text>
+      <text class="grp" x="180" y="22">RASPBERRY PI 4 · ROS2 (PYTHON)</text>
+      <rect class="pi" x="180" y="40" width="150" height="64" rx="8"/><text class="t" x="194" y="66">Fusion node</text><text class="s" x="194" y="86">quality-weighted</text>
+      <rect class="pi" x="180" y="150" width="150" height="64" rx="8"/><text class="t" x="194" y="176">Position controller</text><text class="s" x="194" y="196">position → velocity</text>
+      <text class="grp" x="440" y="22">PIXHAWK 4 · PX4</text>
+      <rect class="bx" x="440" y="40" width="150" height="64" rx="8"/><text class="t" x="454" y="66">EKF2 estimator</text><text class="s" x="454" y="86">custom fused topic</text>
+      <rect class="bx" x="440" y="150" width="150" height="64" rx="8"/><text class="t" x="454" y="176">Attitude + rate</text><text class="s" x="454" y="196">PX4 inner loops</text>
+      <rect class="bx" x="640" y="150" width="110" height="64" rx="8"/><text class="t" x="656" y="186">Motors</text>
+      <path class="ln" d="M140 72 H176"/>
+      <path class="ln" d="M330 72 H436"/><text class="s" x="350" y="64">fused flow</text>
+      <path class="ln" d="M515 104 V128 H255 V146"/><text class="s" x="350" y="122">state estimate</text>
+      <path class="ln" d="M330 182 H436"/><text class="s" x="344" y="174">attitude cmd</text>
+      <path class="ln" d="M590 182 H636"/>
+      <rect class="safe" x="170" y="140" width="170" height="104" rx="10"/><text class="st" x="186" y="236">Safety monitor → safe hover</text>
+    </svg>
+  </div>
+  <p class="cap">How the pieces talk to each other. The Pi does the sensing and control; PX4 keeps doing what it's best at, stabilising the airframe.</p>
+</section>
+
+<section class="decision">
+  <h2>The decision that mattered</h2>
+  <p>I started in MATLAB/Simulink with the UAV Toolbox, following earlier projects at ZHAW. It couldn't support the flight setup I needed, so I documented exactly why and moved the whole project to ROS2 in Python. Throwing away the first plan was the hardest part of the thesis, and the reason the drone flew.</p>
+</section>
+
+<section>
+  <h2>How I tested it</h2>
+  <div class="two">
+    <div>
+      <p>Every flight followed the same procedure: GPS disabled, the safety layer armed, one change at a time. After each flight I went through the logs to see what the estimator and controller actually did, then changed the next thing.</p>
+      <p>The best run held position autonomously for about 43 seconds, with the drone's attitude staying within ±2°.</p>
+    </div>
+    <figure class="photo">
+      <img src="hover_test.jpg" alt="The quadcopter hovering in an enclosed concrete test area while the pilot holds the safety remote" width="1232" height="1195" loading="lazy">
+      <figcaption>Hover test in the enclosed test area, safety pilot standing by.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <h2>About me</h2>
+  <p>I'm Divyanshi Mishra, an aerospace engineer (MSc, University of Pisa, July 2026, Space Engineering). Besides this thesis, I worked in a six-person team on a deep-space asteroid mission study, where I sized the reaction wheels, designed the preliminary thermal control and built the power budgets. I'm looking for a first role in GNC, flight control or space systems, and I'm happy to relocate.</p>
+  <div class="links">
+    <a class="primary" href="https://github.com/dmishra-space/Dual-Optical-Flow-Sensor-Fusion">Code on GitHub</a>
+    <a href="https://www.linkedin.com/in/divyanshi-mishra-9a928426b">LinkedIn</a>
+    <a href="mailto:divyanshimishrayo1@gmail.com">Email me</a>
+  </div>
+  <p class="contact" style="margin-top:12px">divyanshimishrayo1@gmail.com</p>
+  <p style="font-size:.95rem;color:var(--muted)">Full thesis and CV available on request.</p>
+</section>
+
+<footer>Stack: PX4 v1.14.3 · ROS2 Humble · Pixhawk 4 · Raspberry Pi 4 · Python</footer>
+</div>
+</body>
+</html>
