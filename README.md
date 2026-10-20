@@ -1,61 +1,30 @@
-# Dual Optical Flow Sensor Fusion for GPS-Denied UAV Navigation
+# Dual Optical-Flow Sensor Fusion: GPS-free position hold for a PX4 drone
 
-## Overview
+**Project page with flight video:** https://dmishra-space.github.io/Dual-Optical-Flow-Sensor-Fusion/
 
-This repository contains the source code and firmware modifications developed for a Master's thesis investigating dual optical flow sensor fusion for GPS-denied autonomous flight using:
+Master's thesis project by Divyanshi Mishra (MSc Aerospace Engineering, University of Pisa), carried out at ZHAW Zurich University of Applied Sciences (Nov 2025 - Feb 2026).
 
-- Pixhawk 4
-- PX4 v1.14.3
-- Raspberry Pi 4
-- ROS2 Humble
-- Two Holybro H-Flow optical flow sensors
+## Result
+- About **43 s of autonomous position hold with GPS disabled**
+- Attitude error held within **±2°** during the hold
 
-The system performs quality-weighted fusion of two optical flow sensors on the companion computer and publishes the fused result back into PX4 through a custom uORB topic.
+## What it does
+- **Controller:** ROS2 offboard position-hold node in Python on a Raspberry Pi 4, with cascaded position and velocity loops commanding PX4's attitude and rate loops on a Pixhawk 4.
+- **Sensor fusion:** quality-weighted fusion of two Holybro H-Flow optical-flow sensors, sent to PX4's EKF2 through a custom uORB topic (`FusedOpticalFlow`) for sensor redundancy.
+- **Safety:** three-layer fallback (estimator-validity checks, communication monitoring, safe-hover fallback).
+- **Logging:** logger and dashboard nodes for reviewing every flight.
 
-## Repository Structure
+## Stack
+PX4 v1.14.3 · ROS2 Humble · Pixhawk 4 · Raspberry Pi 4 · two Holybro H-Flow sensors · Python
 
-
-```text
-Dual-Optical-Flow-Sensor-Fusion
-│
-├── ros2_nodes/
-│   ├── dmux_node.py
-│   ├── fusion_node.py
-│   ├── controller_node.py
-│   ├── logger_node.py
-│   └── dashboard_node.py
-│
-├── px4_modifications/
-│   ├── FusedOpticalFlow.msg
-│   ├── VehicleOpticalFlow_changes.md
-│   └── dds_topics.yaml
-│
-├── diagrams/
-│   ├── system_architecture.png
-│   ├── fusion_pipeline.png
-│   ├── offboard_architecture.png
-│   └── controller_flowchart.png
-│
-└── docs/
-    └── thesis.pdf
+## Repository structure
+```
+ros2_nodes/          dmux_node.py, fusion_node.py, controller_node.py, logger_node.py, dashboard_node.py
+ros2_package/        ROS2 package files (package.xml, setup.py, setup.cfg)
+px4_modifications/   FusedOpticalFlow.msg (custom uORB message)
+scripts/             start.sh, Makefile, uav_fusion.yml
+index.html, *.mp4    project page and flight video (GitHub Pages)
 ```
 
-## Features
-
-- Dual optical flow fusion
-- Quality-weighted averaging
-- Custom PX4 uORB topic integration
-- ROS2 offboard control
-- GPS-denied navigation
-- Three-layer safety fallback architecture
-
-## Thesis
-
-The complete thesis describing the design, implementation and evaluation of the system is available in the `docs` directory.
-
 ## Author
-
-Divyanshi Mishra
-
-Master Thesis
-University of Pisa/ Zurich University of Applied Sciences (ZHAW)
+Divyanshi Mishra · [LinkedIn](https://www.linkedin.com/in/divyanshi-mishra-9a928426b) · divyanshimishrayo1@gmail.com
